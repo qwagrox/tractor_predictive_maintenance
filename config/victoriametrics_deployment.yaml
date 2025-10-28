@@ -1,0 +1,146 @@
+# VictoriaMetrics集群部署配置
+# 适用于拖拉机预测性维护系统的时序数据湖
+
+version: '3.8'
+
+services:
+  # vmstorage - 数据存储节点（可水平扩展）
+  vmstorage-1:
+    image: victoriametrics/vmstorage:latest
+    container_name: vmstorage-1
+    ports:
+      - "8482:8482"  # vminsert写入端口
+      - "8401:8401"  # vmselect查询端口
+      - "8400:8400"  # HTTP API
+    volumes:
+      - vmstorage-1-data:/storage
+    command:
+      - "--storageDataPath=/storage"
+      - "--retentionPeriod=12"  # 保留12个月数据
+      - "--httpListenAddr=:8400"
+      - "--vminsertAddr=:8482"
+      - "--vmselectAddr=:8401"
+    restart: always
+    networks:
+      - vm-network
+
+  vmstorage-2:
+    image: victoriametrics/vmstorage:latest
+    container_name: vmstorage-2
+    ports:
+      - "8483:8482"
+      - "8402:8401"
+      - "8410:8400"
+    volumes:
+      - vmstorage-2-data:/storage
+    command:
+      - "--storageDataPath=/storage"
+      - "--retentionPeriod=12"
+      - "--httpListenAddr=:8400"
+      - "--vminsertAddr=:8482"
+      - "--vmselectAddr=:8401"
+    restart: always
+    networks:
+      - vm-network
+
+  # vminsert - 数据写入代理（负载均衡）
+  vminsert:
+    image: victoriametrics/vminsert:latest
+    container_name: vminsert
+    ports:
+      - "8480:8480"  # HTTP API
+    command:
+      - "--httpListenAddr=:8480"
+      - "--storageNode=vmstorage-1:8400,vmstorage-2:8400"
+      - "--replicationFactor=2"  # 数据复制因子
+    depends_on:
+      - vmstorage-1
+      - vmstorage-2
+    restart: always
+    networks:
+      - vm-network
+
+  # vmselect - 数据查询代理
+  vmselect:
+    image: victoriametrics/vmselect:latest
+    container_name: vmselect
+    ports:
+      - "8481:8481"  # HTTP API
+    command:
+      - "--httpListenAddr=:8481"
+      - "--storageNode=vmstorage-1:8401,vmstorage-2:8401"
+      - "--search.maxQueryDuration=60s"
+      - "--search.maxConcurrentRequests=100"
+    depends_on:
+      - vmstorage-1
+      - vmstorage-2
+    restart: always
+    networks:
+      - vm-network
+
+  # vmagent - 数据采集代理（从MQTT采集数据）
+  vmagent:
+    image: victoriametrics/vmagent:latest
+    container_name: vmagent
+    ports:
+      - "8429:8429"  # HTTP API
+      - "8089:8089"  # InfluxDB line protocol
+    volumes:
+      - ./vmagent-config.yml:/etc/vmagent/config.yml
+      - vmagent-data:/vmagent-data
+    command:
+      - "--promscrape.config=/etc/vmagent/config.yml"
+      - "--remoteWrite.url=http://vminsert:8480/insert/0/prometheus/api/v1/write"
+      - "--remoteWrite.maxDiskUsagePerURL=10GB"
+      - "--httpListenAddr=:8429"
+      - "--influxListenAddr=:8089"
+    depends_on:
+      - vminsert
+    restart: always
+    networks:
+      - vm-network
+
+  # Grafana - 数据可视化
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    depends_on:
+      - vmselect
+    restart: always
+    networks:
+      - vm-network
+
+  # MQTT Broker - 接收T-BOX数据
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    ports:
+      - "1883:1883"  # MQTT
+      - "9001:9001"  # WebSocket
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-logs:/mosquitto/log
+    restart: always
+    networks:
+      - vm-network
+
+volumes:
+  vmstorage-1-data:
+  vmstorage-2-data:
+  vmagent-data:
+  grafana-data:
+  mosquitto-data:
+  mosquitto-logs:
+
+networks:
+  vm-network:
+    driver: bridge
