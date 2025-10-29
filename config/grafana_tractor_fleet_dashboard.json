@@ -1,0 +1,588 @@
+{
+  "dashboard": {
+    "title": "拖拉机车队管理仪表板",
+    "tags": ["tractor", "fleet", "predictive-maintenance"],
+    "timezone": "browser",
+    "refresh": "5s",
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "templating": {
+      "list": [
+        {
+          "name": "vehicle_id",
+          "type": "query",
+          "label": "车辆ID",
+          "query": "label_values(tractor_operation_hours, vehicle_id)",
+          "multi": false,
+          "includeAll": false,
+          "refresh": 1
+        },
+        {
+          "name": "interval",
+          "type": "interval",
+          "label": "时间粒度",
+          "auto": true,
+          "auto_count": 30,
+          "auto_min": "10s",
+          "options": [
+            {"text": "1分钟", "value": "1m"},
+            {"text": "5分钟", "value": "5m"},
+            {"text": "10分钟", "value": "10m"},
+            {"text": "30分钟", "value": "30m"},
+            {"text": "1小时", "value": "1h"}
+          ]
+        }
+      ]
+    },
+    "panels": [
+      {
+        "id": 1,
+        "title": "车辆信息",
+        "type": "text",
+        "gridPos": {"x": 0, "y": 0, "w": 4, "h": 6},
+        "options": {
+          "mode": "html",
+          "content": "<div style='text-align:center;'><img src='https://via.placeholder.com/300x200?text=Tractor+Image' style='width:100%;max-width:300px;'/><h3>$vehicle_id</h3></div>"
+        }
+      },
+      {
+        "id": 2,
+        "title": "车速",
+        "type": "stat",
+        "gridPos": {"x": 4, "y": 0, "w": 4, "h": 3},
+        "targets": [
+          {
+            "expr": "tractor_vehicle_speed{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "车速"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "value",
+          "textMode": "value_and_name",
+          "reduceOptions": {
+            "values": false,
+            "calcs": ["lastNotNull"]
+          }
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "velocitykmh",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 10, "color": "yellow"},
+                {"value": 15, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 3,
+        "title": "发动机转速",
+        "type": "stat",
+        "gridPos": {"x": 8, "y": 0, "w": 4, "h": 3},
+        "targets": [
+          {
+            "expr": "tractor_engine_rpm{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "RPM"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "rpm",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 2000, "color": "yellow"},
+                {"value": 2500, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 4,
+        "title": "油耗率",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 0, "w": 4, "h": 3},
+        "targets": [
+          {
+            "expr": "tractor_engine_fuel_consumption_rate{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "油耗"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "Lh",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 18, "color": "yellow"},
+                {"value": 22, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 5,
+        "title": "电池SOC",
+        "type": "stat",
+        "gridPos": {"x": 16, "y": 0, "w": 4, "h": 3},
+        "targets": [
+          {
+            "expr": "tractor_battery_soc{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "SOC"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 20, "color": "yellow"},
+                {"value": 50, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 6,
+        "title": "电池SOH",
+        "type": "stat",
+        "gridPos": {"x": 20, "y": 0, "w": 4, "h": 3},
+        "targets": [
+          {
+            "expr": "tractor_battery_soh{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "SOH"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 80, "color": "yellow"},
+                {"value": 90, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 7,
+        "title": "发动机温度",
+        "type": "stat",
+        "gridPos": {"x": 4, "y": 3, "w": 4, "h": 3},
+        "targets": [
+          {
+            "expr": "tractor_engine_coolant_temp{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "温度"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "celsius",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "blue"},
+                {"value": 80, "color": "green"},
+                {"value": 95, "color": "yellow"},
+                {"value": 105, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 8,
+        "title": "机油压力",
+        "type": "stat",
+        "gridPos": {"x": 8, "y": 3, "w": 4, "h": 3},
+        "targets": [
+          {
+            "expr": "tractor_engine_oil_pressure{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "压力"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "pressurebar",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 3, "color": "yellow"},
+                {"value": 4, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 9,
+        "title": "液压压力",
+        "type": "stat",
+        "gridPos": {"x": 12, "y": 3, "w": 4, "h": 3},
+        "targets": [
+          {
+            "expr": "tractor_hydraulic_pressure{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "压力"
+          }
+        ],
+        "options": {
+          "graphMode": "area",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "pressurebar",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 150, "color": "yellow"},
+                {"value": 170, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 10,
+        "title": "GNSS卫星数",
+        "type": "stat",
+        "gridPos": {"x": 16, "y": 3, "w": 4, "h": 3},
+        "targets": [
+          {
+            "expr": "tractor_gnss_satellite_count{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "卫星"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "short",
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "red"},
+                {"value": 8, "color": "yellow"},
+                {"value": 12, "color": "green"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 11,
+        "title": "定位精度",
+        "type": "stat",
+        "gridPos": {"x": 20, "y": 3, "w": 4, "h": 3},
+        "targets": [
+          {
+            "expr": "tractor_gnss_positioning_accuracy{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "精度"
+          }
+        ],
+        "options": {
+          "graphMode": "none",
+          "colorMode": "value",
+          "textMode": "value_and_name"
+        },
+        "fieldConfig": {
+          "defaults": {
+            "unit": "lengthm",
+            "decimals": 3,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "green"},
+                {"value": 0.05, "color": "yellow"},
+                {"value": 0.1, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 12,
+        "title": "车速趋势",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 6, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "tractor_vehicle_speed{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "车速"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "velocitykmh",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "fillOpacity": 10
+            }
+          }
+        }
+      },
+      {
+        "id": 13,
+        "title": "GPS轨迹地图",
+        "type": "geomap",
+        "gridPos": {"x": 12, "y": 6, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "tractor_gnss_latitude{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "纬度"
+          },
+          {
+            "expr": "tractor_gnss_longitude{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "经度"
+          }
+        ],
+        "options": {
+          "view": {
+            "id": "coords",
+            "lat": 39.9042,
+            "lon": 116.4074,
+            "zoom": 12
+          },
+          "basemap": {
+            "type": "default"
+          }
+        }
+      },
+      {
+        "id": 14,
+        "title": "发动机转速与扭矩",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 14, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "tractor_engine_rpm{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "转速 (RPM)"
+          },
+          {
+            "expr": "tractor_engine_torque{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "扭矩 (Nm)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "fillOpacity": 10
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "转速 (RPM)"},
+              "properties": [
+                {"id": "unit", "value": "rpm"},
+                {"id": "custom.axisPlacement", "value": "left"}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "扭矩 (Nm)"},
+              "properties": [
+                {"id": "unit", "value": "Nm"},
+                {"id": "custom.axisPlacement", "value": "right"}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": 15,
+        "title": "电池状态",
+        "type": "timeseries",
+        "gridPos": {"x": 12, "y": 14, "w": 12, "h": 8},
+        "targets": [
+          {
+            "expr": "tractor_battery_soc{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "SOC (%)"
+          },
+          {
+            "expr": "tractor_battery_voltage{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "电压 (V)"
+          },
+          {
+            "expr": "tractor_battery_current{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "电流 (A)"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "fillOpacity": 10
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "SOC (%)"},
+              "properties": [
+                {"id": "unit", "value": "percent"},
+                {"id": "custom.axisPlacement", "value": "left"}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "电压 (V)"},
+              "properties": [
+                {"id": "unit", "value": "volt"},
+                {"id": "custom.axisPlacement", "value": "right"}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "电流 (A)"},
+              "properties": [
+                {"id": "unit", "value": "amp"},
+                {"id": "custom.axisPlacement", "value": "right"}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": 16,
+        "title": "发动机温度",
+        "type": "timeseries",
+        "gridPos": {"x": 0, "y": 22, "w": 8, "h": 6},
+        "targets": [
+          {
+            "expr": "tractor_engine_coolant_temp{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "冷却液温度"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "celsius",
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "fillOpacity": 20
+            },
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"value": 0, "color": "blue"},
+                {"value": 95, "color": "yellow"},
+                {"value": 105, "color": "red"}
+              ]
+            }
+          }
+        }
+      },
+      {
+        "id": 17,
+        "title": "液压系统",
+        "type": "timeseries",
+        "gridPos": {"x": 8, "y": 22, "w": 8, "h": 6},
+        "targets": [
+          {
+            "expr": "tractor_hydraulic_pressure{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "液压压力"
+          },
+          {
+            "expr": "tractor_hydraulic_oil_temp{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "液压油温"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "custom": {
+              "drawStyle": "line",
+              "lineInterpolation": "smooth",
+              "fillOpacity": 10
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "液压压力"},
+              "properties": [
+                {"id": "unit", "value": "pressurebar"},
+                {"id": "custom.axisPlacement", "value": "left"}
+              ]
+            },
+            {
+              "matcher": {"id": "byName", "options": "液压油温"},
+              "properties": [
+                {"id": "unit", "value": "celsius"},
+                {"id": "custom.axisPlacement", "value": "right"}
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "id": 18,
+        "title": "加速度直方图",
+        "type": "histogram",
+        "gridPos": {"x": 16, "y": 22, "w": 8, "h": 6},
+        "targets": [
+          {
+            "expr": "tractor_vehicle_acceleration{vehicle_id=\"$vehicle_id\"}",
+            "legendFormat": "加速度"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "accMS2"
+          }
+        }
+      }
+    ]
+  }
+}
