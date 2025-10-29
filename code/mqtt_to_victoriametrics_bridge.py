@@ -81,7 +81,11 @@ class MQTTToVictoriaMetricsBridge:
             engine = data_packet['engine']
             for key, value in engine.items():
                 if isinstance(value, (int, float)):
-                    metric_name = f'tractor_engine_{key}'
+                    # fuel_level特殊处理，映射到tractor_fuel_level
+                    if key == 'fuel_level':
+                        metric_name = 'tractor_fuel_level'
+                    else:
+                        metric_name = f'tractor_engine_{key}'
                     lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')
         
         # 处理电池数据
@@ -92,14 +96,13 @@ class MQTTToVictoriaMetricsBridge:
                     metric_name = f'tractor_battery_{key}'
                     lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')
         
-        # 处理车辆状态
-        if 'vehicle_state' in data_packet:
-            vehicle_state = data_packet['vehicle_state']
-            for key, value in vehicle_state.items():
+        # 处理车辆状态数据（支持vehicle和vehicle_state两种字段名）
+        vehicle_data = data_packet.get('vehicle_state') or data_packet.get('vehicle')
+        if vehicle_data:
+            for key, value in vehicle_data.items():
                 if isinstance(value, (int, float)):
                     metric_name = f'tractor_vehicle_{key}'
-                    lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')
-        
+                    lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')       
         # 处理变速箱数据
         if 'transmission' in data_packet:
             transmission = data_packet['transmission']
@@ -158,11 +161,13 @@ class MQTTToVictoriaMetricsBridge:
         data = '\n'.join(prometheus_lines)
         
         try:
+            # 禁用代理，直接连接到localhost
             response = requests.post(
                 self.write_endpoint,
                 data=data,
                 headers={'Content-Type': 'text/plain'},
-                timeout=10
+                timeout=10,
+                proxies={'http': None, 'https': None}  # 禁用代理
             )
             
             if response.status_code == 204:
@@ -196,8 +201,85 @@ class MQTTToVictoriaMetricsBridge:
         return success
 
 
+def run_mqtt_bridge():
+    """运行MQTT桥接服务"""
+    import paho.mqtt.client as mqtt
+    
+    # 创建桥接器实例
+    bridge = MQTTToVictoriaMetricsBridge(vm_url="http://localhost:8480")
+    
+    # MQTT配置
+    mqtt_broker = "localhost"
+    mqtt_port = 1883
+    mqtt_topic = "tractor/+/data"
+    
+    # MQTT回调函数
+    def on_connect(client, userdata, flags, rc):
+        if rc == 0:
+            print("[成功] 连接到MQTT Broker")
+            client.subscribe(mqtt_topic)
+            print(f"[成功] 订阅主题: {mqtt_topic}")
+            print("\n等待T-BOX数据...\n")
+        else:
+            print(f"[错误] 连接失败, 错误代码: {rc}")
+    
+    def on_message(client, userdata, msg):
+        try:
+            # 解析JSON数据
+            data_packet = json.loads(msg.payload.decode('utf-8'))
+            vehicle_id = data_packet.get('vehicle_id', 'unknown')
+            
+            print(f"[接收] 车辆 {vehicle_id} 的数据 ({len(msg.payload)} 字节)")
+            
+            # 转换为Prometheus格式
+            prometheus_lines = bridge.convert_to_prometheus_format(data_packet)
+            print(f"[转换] 生成 {len(prometheus_lines)} 个指标")
+            
+            # 写入VictoriaMetrics
+            success = bridge.write_to_victoriametrics(prometheus_lines)
+            if success:
+                print(f"[成功] 写入 {len(prometheus_lines)} 个指标到VictoriaMetrics\n")
+            else:
+                print(f"[失败] 无法写入VictoriaMetrics\n")
+        except Exception as e:
+            print(f"[错误] 处理消息失败: {e}\n")
+    
+    def on_disconnect(client, userdata, rc):
+        if rc != 0:
+            print(f"[警告] 与MQTT Broker断开连接, 尝试重连...")
+    
+    # 创建MQTT客户端
+    client = mqtt.Client()
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.on_disconnect = on_disconnect
+    
+    print("=" * 80)
+    print("MQTT到VictoriaMetrics数据桥接服务")
+    print("=" * 80)
+    print(f"MQTT Broker: {mqtt_broker}:{mqtt_port}")
+    print(f"MQTT Topic: {mqtt_topic}")
+    print(f"VictoriaMetrics: {bridge.write_endpoint}")
+    print("=" * 80)
+    print()
+    
+    try:
+        print("[连接] 正在连接到MQTT Broker...")
+        client.connect(mqtt_broker, mqtt_port, 60)
+        client.loop_forever()
+    except KeyboardInterrupt:
+        print("\n\n[停止] 用户中断服务")
+        client.disconnect()
+    except Exception as e:
+        print(f"\n[错误] 服务异常: {e}")
+        print("\n请检查:")
+        print("1. MQTT Broker是否运行: docker ps | findstr mosquitto")
+        print("2. VictoriaMetrics是否运行: docker ps | findstr vm")
+        print("3. 端口是否被占用: netstat -ano | findstr :1883")
+
+
 def demo_bridge():
-    """演示桥接器功能"""
+    """演示桥接器功能（仅用于测试）"""
     # 创建桥接器实例
     bridge = MQTTToVictoriaMetricsBridge(vm_url="http://localhost:8480")
     
@@ -257,4 +339,15 @@ def demo_bridge():
 
 
 if __name__ == '__main__':
-    demo_bridge()
+    # 运行真正的MQTT桥接服务
+    try:
+        import paho.mqtt.client as mqtt
+        run_mqtt_bridge()
+    except ImportError:
+        print("[错误] 缺少paho-mqtt库")
+        print("\n请安装: pip install paho-mqtt")
+        print("\n如果只是想测试转换功能，可以运行演示模式:")
+        print(">>> from mqtt_to_victoriametrics_bridge import demo_bridge")
+        print(">>> demo_bridge()")
+        import sys
+        sys.exit(1)

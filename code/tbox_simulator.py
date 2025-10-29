@@ -13,6 +13,14 @@ from datetime import datetime
 from typing import Dict, List, Any
 import numpy as np
 
+try:
+    import paho.mqtt.client as mqtt
+    MQTT_AVAILABLE = True
+except ImportError:
+    MQTT_AVAILABLE = False
+    print("警告: paho-mqtt库未安装，将只输出到控制台")
+    print("安装命令: pip install paho-mqtt")
+
 
 class TractorDataSimulator:
     """拖拉机数据模拟器"""
@@ -268,7 +276,9 @@ class TractorDataSimulator:
         }
 
 
-def simulate_tbox_data_stream(vehicle_id: str, duration_seconds: int = 60, sample_rate: float = 1.0):
+def simulate_tbox_data_stream(vehicle_id: str, duration_seconds: int = 60, sample_rate: float = 1.0,
+                              mqtt_broker: str = 'localhost', mqtt_port: int = 1883,
+                              use_mqtt: bool = True):
     """
     模拟T-BOX数据流
     
@@ -276,11 +286,32 @@ def simulate_tbox_data_stream(vehicle_id: str, duration_seconds: int = 60, sampl
         vehicle_id: 车辆ID
         duration_seconds: 模拟持续时间（秒）
         sample_rate: 采样率（Hz）
+        mqtt_broker: MQTT Broker地址
+        mqtt_port: MQTT Broker端口
+        use_mqtt: 是否使用MQTT发送数据
     """
     simulator = TractorDataSimulator(vehicle_id)
     
+    # 初始化MQTT客户端
+    mqtt_client = None
+    mqtt_connected = False
+    
+    if use_mqtt and MQTT_AVAILABLE:
+        try:
+            mqtt_client = mqtt.Client()
+            mqtt_client.connect(mqtt_broker, mqtt_port, 60)
+            mqtt_client.loop_start()
+            mqtt_connected = True
+            print(f"✓ 成功连接到MQTT Broker: {mqtt_broker}:{mqtt_port}")
+        except Exception as e:
+            print(f"✗ 无法连接到MQTT Broker: {e}")
+            print("  将只输出到控制台")
+            mqtt_connected = False
+    
     print(f"开始模拟车辆 {vehicle_id} 的T-BOX数据流...")
     print(f"持续时间: {duration_seconds}秒, 采样率: {sample_rate}Hz")
+    if mqtt_connected:
+        print(f"MQTT主题: tractor/{vehicle_id}/data")
     print("-" * 80)
     
     start_time = time.time()
@@ -290,8 +321,23 @@ def simulate_tbox_data_stream(vehicle_id: str, duration_seconds: int = 60, sampl
         # 生成数据包
         data_packet = simulator.generate_complete_data_packet()
         
-        # 输出到控制台（实际应用中应通过MQTT发送）
-        print(f"\n[样本 #{sample_count + 1}] 时间: {data_packet['timestamp']}")
+        # 发送到MQTT
+        if mqtt_connected and mqtt_client:
+            try:
+                topic = f"tractor/{vehicle_id}/data"
+                payload = json.dumps(data_packet, ensure_ascii=False)
+                result = mqtt_client.publish(topic, payload, qos=0)
+                if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                    mqtt_status = "✓ 已发送"
+                else:
+                    mqtt_status = f"✗ 发送失败 (rc={result.rc})"
+            except Exception as e:
+                mqtt_status = f"✗ 发送异常: {e}"
+        else:
+            mqtt_status = "- 仅控制台"
+        
+        # 输出到控制台
+        print(f"\n[样本 #{sample_count + 1}] 时间: {data_packet['timestamp']} {mqtt_status}")
         print(f"运行时长: {data_packet['operation_hours']:.2f}小时")
         print(f"发动机: RPM={data_packet['engine']['rpm']:.0f}, 温度={data_packet['engine']['coolant_temp']:.1f}°C")
         print(f"电池: SOC={data_packet['battery']['soc']:.1f}%, SOH={data_packet['battery']['soh']:.1f}%")
@@ -310,6 +356,11 @@ def simulate_tbox_data_stream(vehicle_id: str, duration_seconds: int = 60, sampl
         
         # 控制采样率
         time.sleep(1.0 / sample_rate)
+    
+    # 清理MQTT连接
+    if mqtt_connected and mqtt_client:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
     
     print("\n" + "=" * 80)
     print(f"模拟完成! 共生成 {sample_count} 个数据样本")

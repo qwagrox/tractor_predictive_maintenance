@@ -1,4 +1,4 @@
-# Nixtla TimeGPT-1 时序分析大模型调研
+# Nixtla TimeGPT-1 时序分析大模型研判
 
 ## 基本信息
 - **项目名称**: TimeGPT-1

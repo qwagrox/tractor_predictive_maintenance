@@ -8,12 +8,15 @@
 4. 生成维护建议和告警
 """
 
+import sys
 import time
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from typing import Dict, List, Any
 
+# 导入自定义模块
+sys.path.append('/home/ubuntu')
 from tbox_simulator import TractorDataSimulator
 from mqtt_to_victoriametrics_bridge import MQTTToVictoriaMetricsBridge
 from predictive_maintenance_engine import PredictiveMaintenanceEngine

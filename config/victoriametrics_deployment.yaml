@@ -1,7 +1,8 @@
 # VictoriaMetrics集群部署配置
 # 适用于拖拉机预测性维护系统的时序数据湖
 
-version: '3.8'
+# Docker Compose配置
+# 注意: 'version'字段已废弃，Docker Compose v2不再需要此字段
 
 services:
   # vmstorage - 数据存储节点（可水平扩展）
@@ -51,7 +52,7 @@ services:
       - "8480:8480"  # HTTP API
     command:
       - "--httpListenAddr=:8480"
-      - "--storageNode=vmstorage-1:8400,vmstorage-2:8400"
+      - "--storageNode=vmstorage-1:8482,vmstorage-2:8482"
       - "--replicationFactor=2"  # 数据复制因子
     depends_on:
       - vmstorage-1
@@ -86,10 +87,11 @@ services:
       - "8429:8429"  # HTTP API
       - "8089:8089"  # InfluxDB line protocol
     volumes:
-      - ./vmagent-config.yml:/etc/vmagent/config.yml
       - vmagent-data:/vmagent-data
+    # 注意: vmagent配置文件为可选项
+    # 如需自定义采集配置，请取消下面的注释并创建vmagent-config.yml文件
+    # - ./vmagent-config.yml:/etc/vmagent/config.yml
     command:
-      - "--promscrape.config=/etc/vmagent/config.yml"
       - "--remoteWrite.url=http://vminsert:8480/insert/0/prometheus/api/v1/write"
       - "--remoteWrite.maxDiskUsagePerURL=10GB"
       - "--httpListenAddr=:8429"
@@ -111,7 +113,9 @@ services:
       - GF_INSTALL_PLUGINS=grafana-piechart-panel
     volumes:
       - grafana-data:/var/lib/grafana
-      - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    # 注意: Grafana数据源配置为可选项，也可以通过deploy_grafana_dashboard.py自动配置
+    # 如需自动配置数据源，请取消下面的注释并创建grafana-datasources.yml文件
+    # - ./grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
     depends_on:
       - vmselect
     restart: always
@@ -126,9 +130,17 @@ services:
       - "1883:1883"  # MQTT
       - "9001:9001"  # WebSocket
     volumes:
-      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
       - mosquitto-data:/mosquitto/data
       - mosquitto-logs:/mosquitto/log
+    command: |
+      sh -c '
+      mkdir -p /mosquitto/config && 
+      echo "allow_anonymous true" > /mosquitto/config/mosquitto.conf && 
+      echo "listener 1883 0.0.0.0" >> /mosquitto/config/mosquitto.conf && 
+      echo "listener 9001 0.0.0.0" >> /mosquitto/config/mosquitto.conf && 
+      echo "protocol websockets" >> /mosquitto/config/mosquitto.conf && 
+      mosquitto -c /mosquitto/config/mosquitto.conf
+      '
     restart: always
     networks:
       - vm-network

@@ -183,10 +183,30 @@ def main():
     
     # 导入仪表板
     print("3. 导入拖拉机车队管理仪表板...")
-    dashboard_path = "/home/ubuntu/grafana_tractor_fleet_dashboard.json"
+    
+    # 自动检测仪表板文件路径（跨平台兼容）
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config_dir = os.path.join(os.path.dirname(script_dir), 'config')
+    dashboard_path = os.path.join(config_dir, 'grafana_tractor_fleet_dashboard.json')
+    
+    # 如果在config目录找不到，尝试当前目录
     if not os.path.exists(dashboard_path):
-        print(f"✗ 仪表板文件不存在: {dashboard_path}")
+        dashboard_path = os.path.join(script_dir, 'grafana_tractor_fleet_dashboard.json')
+    
+    # 如果还是找不到，尝试上级目录
+    if not os.path.exists(dashboard_path):
+        dashboard_path = os.path.join(os.path.dirname(script_dir), 'grafana_tractor_fleet_dashboard.json')
+    
+    if not os.path.exists(dashboard_path):
+        print(f"✗ 仪表板文件不存在")
+        print(f"  已尝试以下路径:")
+        print(f"  - {os.path.join(config_dir, 'grafana_tractor_fleet_dashboard.json')}")
+        print(f"  - {os.path.join(script_dir, 'grafana_tractor_fleet_dashboard.json')}")
+        print(f"  - {os.path.join(os.path.dirname(script_dir), 'grafana_tractor_fleet_dashboard.json')}")
+        print(f"\n  请确保仪表板文件位于 config 目录中")
         return False
+    
+    print(f"  使用仪表板文件: {dashboard_path}")
     
     if not deployer.import_dashboard(dashboard_path):
         print("\n✗ 部署失败: 无法导入仪表板")
@@ -203,6 +223,12 @@ def main():
     print(f"密码: {grafana_password}")
     print()
     print("提示: 在Grafana中选择车辆ID变量以查看特定车辆的数据")
+    print()
+    print("下一步:")
+    print("  1. 访问Grafana并登录")
+    print("  2. 导航到 Dashboards → Browse")
+    print("  3. 找到并打开 '拖拉机车队管理仪表板'")
+    print("  4. 运行 T-BOX 模拟器: python tbox_simulator.py")
     print()
     
     return True

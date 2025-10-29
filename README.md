@@ -1,6 +1,6 @@
 # 油电混动无人拖拉机预测性维护系统
 
-**版本**: 1.0  
+**版本**: 2.0  
 **交付日期**: 2025年10月29日  
 **作者**: tangyong@stmail.ujs.edu.cn ， 目前就读于江苏大学农机控制理论与工程博士
 
@@ -19,14 +19,18 @@
 │   ├── timeseries_tech_comparison.md  # 时序数据库和分析引擎对比研究
 │   ├── nixtla_timegpt_summary.md      # Nixtla TimeGPT关键信息
 │   ├── predictive_maintenance_system_design_victoriametrics.md  # 系统设计方案
-│   └── predictive_maintenance_architecture_victoriametrics.png  # 系统架构图
+│   ├── predictive_maintenance_architecture_victoriametrics.png  # 系统架构图
+│   ├── GRAFANA_DASHBOARD_INTEGRATION.md  # Grafana仪表板集成指南（新增）
+│   └── css_electronics_grafana_dashboard_summary.md  # CSS Electronics方案总结（新增）
 ├── code/                               # 代码目录
 │   ├── tbox_simulator.py              # T-BOX数据模拟器
 │   ├── mqtt_to_victoriametrics_bridge.py  # MQTT到VictoriaMetrics数据桥接服务
 │   ├── predictive_maintenance_engine.py   # 预测性维护分析引擎
-│   └── nixtla_timegpt_integration.py  # Nixtla TimeGPT集成示例
+│   ├── nixtla_timegpt_integration.py  # Nixtla TimeGPT集成示例
+│   └── deploy_grafana_dashboard.py    # Grafana仪表板自动部署脚本（新增）
 ├── config/                             # 配置目录
-│   └── victoriametrics_deployment.yaml  # VictoriaMetrics集群部署配置
+│   ├── victoriametrics_deployment.yaml  # VictoriaMetrics集群部署配置
+│   └── grafana_tractor_fleet_dashboard.json  # Grafana仪表板配置（新增）
 └── tests/                              # 测试目录
     └── end_to_end_system_test.py      # 端到端系统集成测试
 ```
