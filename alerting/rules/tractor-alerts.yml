@@ -1,0 +1,200 @@
+groups:
+  # ============================================================================
+  # Critical Alerts - Require immediate attention
+  # ============================================================================
+  - name: tractor_critical_alerts
+    interval: 30s
+    rules:
+      # Engine overheating
+      - alert: EngineOverheating
+        expr: engine_coolant_temp > 105
+        for: 2m
+        labels:
+          severity: critical
+          category: engine
+        annotations:
+          summary: "Engine overheating detected"
+          description: "Vehicle {{ $labels.vehicle_id }} engine coolant temperature is {{ $value }}°C (threshold: 105°C)"
+
+      # Low oil pressure
+      - alert: LowOilPressure
+        expr: engine_oil_pressure < 2
+        for: 2m
+        labels:
+          severity: critical
+          category: engine
+        annotations:
+          summary: "Low engine oil pressure"
+          description: "Vehicle {{ $labels.vehicle_id }} oil pressure is {{ $value }} bar (threshold: 2 bar)"
+
+      # Battery critical low
+      - alert: BatteryCriticalLow
+        expr: battery_soc < 10
+        for: 2m
+        labels:
+          severity: critical
+          category: battery
+        annotations:
+          summary: "Battery critically low"
+          description: "Vehicle {{ $labels.vehicle_id }} battery SOC is {{ $value }}% (threshold: 10%)"
+
+      # Hydraulic system failure
+      - alert: HydraulicSystemFailure
+        expr: hydraulic_system_pressure < 100
+        for: 2m
+        labels:
+          severity: critical
+          category: hydraulic
+        annotations:
+          summary: "Hydraulic system pressure too low"
+          description: "Vehicle {{ $labels.vehicle_id }} hydraulic pressure is {{ $value }} bar (threshold: 100 bar)"
+
+  # ============================================================================
+  # Warning Alerts - Require attention soon
+  # ============================================================================
+  - name: tractor_warning_alerts
+    interval: 1m
+    rules:
+      # Low fuel level
+      - alert: LowFuelLevel
+        expr: fuel_level < 15
+        for: 5m
+        labels:
+          severity: warning
+          category: fuel
+        annotations:
+          summary: "Low fuel level"
+          description: "Vehicle {{ $labels.vehicle_id }} fuel level is {{ $value }}% (threshold: 15%)"
+
+      # Battery low
+      - alert: BatteryLow
+        expr: battery_soc < 20
+        for: 5m
+        labels:
+          severity: warning
+          category: battery
+        annotations:
+          summary: "Battery low"
+          description: "Vehicle {{ $labels.vehicle_id }} battery SOC is {{ $value }}% (threshold: 20%)"
+
+      # High engine temperature (warning level)
+      - alert: EngineHighTemperature
+        expr: engine_coolant_temp > 95 and engine_coolant_temp <= 105
+        for: 5m
+        labels:
+          severity: warning
+          category: engine
+        annotations:
+          summary: "Engine temperature high"
+          description: "Vehicle {{ $labels.vehicle_id }} engine temperature is {{ $value }}°C (warning threshold: 95°C)"
+
+      # Battery health degradation
+      - alert: BatteryHealthDegraded
+        expr: battery_soh < 80
+        for: 10m
+        labels:
+          severity: warning
+          category: battery
+        annotations:
+          summary: "Battery health degraded"
+          description: "Vehicle {{ $labels.vehicle_id }} battery SOH is {{ $value }}% (threshold: 80%)"
+
+      # High transmission temperature
+      - alert: TransmissionHighTemp
+        expr: transmission_oil_temp > 100
+        for: 5m
+        labels:
+          severity: warning
+          category: transmission
+        annotations:
+          summary: "Transmission temperature high"
+          description: "Vehicle {{ $labels.vehicle_id }} transmission oil temperature is {{ $value }}°C (threshold: 100°C)"
+
+  # ============================================================================
+  # Communication Alerts
+  # ============================================================================
+  - name: tractor_communication_alerts
+    interval: 2m
+    rules:
+      # No data received
+      - alert: TractorNoData
+        expr: absent(engine_coolant_temp)
+        for: 5m
+        labels:
+          severity: warning
+          category: communication
+        annotations:
+          summary: "No data received from tractor"
+          description: "No telemetry data received from vehicle in the last 5 minutes"
+
+      # GPS signal lost
+      - alert: GPSSignalLost
+        expr: gnss_satellite_count < 4
+        for: 3m
+        labels:
+          severity: warning
+          category: gps
+        annotations:
+          summary: "GPS signal weak or lost"
+          description: "Vehicle {{ $labels.vehicle_id }} has only {{ $value }} satellites (minimum: 4)"
+
+  # ============================================================================
+  # Predictive Maintenance Alerts
+  # ============================================================================
+  - name: tractor_predictive_alerts
+    interval: 5m
+    rules:
+      # Battery voltage imbalance
+      - alert: BatteryVoltageImbalance
+        expr: battery_cell_voltage_diff > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          category: battery
+        annotations:
+          summary: "Battery cell voltage imbalance"
+          description: "Vehicle {{ $labels.vehicle_id }} battery cell voltage difference is {{ $value }}V (threshold: 0.1V)"
+
+      # High battery charge cycles
+      - alert: HighBatteryChargeCycles
+        expr: battery_charge_cycles > 1000
+        for: 1h
+        labels:
+          severity: info
+          category: battery
+        annotations:
+          summary: "Battery charge cycles high"
+          description: "Vehicle {{ $labels.vehicle_id }} battery has {{ $value }} charge cycles (threshold: 1000)"
+
+      # Air filter clogged
+      - alert: AirFilterClogged
+        expr: air_filter_pressure_diff > 5
+        for: 10m
+        labels:
+          severity: warning
+          category: maintenance
+        annotations:
+          summary: "Air filter may be clogged"
+          description: "Vehicle {{ $labels.vehicle_id }} air filter pressure difference is {{ $value }} kPa (threshold: 5 kPa)"
+
+      # Motor temperature high
+      - alert: MotorHighTemperature
+        expr: motor_temp > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: motor
+        annotations:
+          summary: "Motor temperature high"
+          description: "Vehicle {{ $labels.vehicle_id }} motor temperature is {{ $value }}°C (threshold: 80°C)"
+
+      # Motor controller temperature high
+      - alert: MotorControllerHighTemp
+        expr: motor_controller_temp > 70
+        for: 5m
+        labels:
+          severity: warning
+          category: motor
+        annotations:
+          summary: "Motor controller temperature high"
+          description: "Vehicle {{ $labels.vehicle_id }} motor controller temperature is {{ $value }}°C (threshold: 70°C)"

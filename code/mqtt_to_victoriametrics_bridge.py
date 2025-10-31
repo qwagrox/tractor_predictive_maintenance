@@ -1,252 +1,207 @@
 #!/usr/bin/env python3
 """
-MQTT到VictoriaMetrics数据桥接服务
-接收T-BOX通过MQTT上传的数据，转换为VictoriaMetrics格式并写入
+MQTT到VictoriaMetrics数据桥接服务 - 完整版
+支持T-BOX发送的所有60+指标
 """
 
 import json
 import time
+import requests
 from datetime import datetime
 from typing import Dict, Any, List
-import requests
 
-
-class MQTTToVictoriaMetricsBridge:
-    """MQTT到VictoriaMetrics的数据桥接器"""
-    
-    def __init__(self, vm_url: str = "http://localhost:8480"):
-        """
-        初始化桥接器
-        
-        Args:
-            vm_url: VictoriaMetrics vminsert的URL
-        """
-        self.vm_url = vm_url
-        self.write_endpoint = f"{vm_url}/insert/0/prometheus/api/v1/import/prometheus"
-        
-    def flatten_dict(self, d: Dict[str, Any], parent_key: str = '', sep: str = '_') -> Dict[str, Any]:
-        """
-        将嵌套字典展平
-        
-        Args:
-            d: 嵌套字典
-            parent_key: 父键名
-            sep: 分隔符
-            
-        Returns:
-            展平后的字典
-        """
-        items = []
-        for k, v in d.items():
-            new_key = f"{parent_key}{sep}{k}" if parent_key else k
-            if isinstance(v, dict):
-                items.extend(self.flatten_dict(v, new_key, sep=sep).items())
-            elif isinstance(v, (int, float)):
-                items.append((new_key, v))
-            elif isinstance(v, str):
-                # 字符串类型作为标签，不作为指标值
-                pass
-        return dict(items)
-    
-    def convert_to_prometheus_format(self, data_packet: Dict[str, Any]) -> List[str]:
-        """
-        将T-BOX数据包转换为Prometheus文本格式
-        
-        Args:
-            data_packet: T-BOX数据包
-            
-        Returns:
-            Prometheus格式的指标行列表
-        """
-        lines = []
-        vehicle_id = data_packet.get('vehicle_id', 'unknown')
-        timestamp_str = data_packet.get('timestamp', datetime.now().isoformat())
-        
-        # 转换时间戳为毫秒
-        try:
-            dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
-            timestamp_ms = int(dt.timestamp() * 1000)
-        except:
-            timestamp_ms = int(time.time() * 1000)
-        
-        # 基础标签
-        base_labels = f'vehicle_id="{vehicle_id}"'
-        
-        # 处理运行时长
-        if 'operation_hours' in data_packet:
-            lines.append(f'tractor_operation_hours{{{base_labels}}} {data_packet["operation_hours"]} {timestamp_ms}')
-        
-        # 处理发动机数据
-        if 'engine' in data_packet:
-            engine = data_packet['engine']
-            for key, value in engine.items():
-                if isinstance(value, (int, float)):
-                    # fuel_level特殊处理，映射到tractor_fuel_level
-                    if key == 'fuel_level':
-                        metric_name = 'tractor_fuel_level'
-                    else:
-                        metric_name = f'tractor_engine_{key}'
-                    lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')
-        
-        # 处理电池数据
-        if 'battery' in data_packet:
-            battery = data_packet['battery']
-            for key, value in battery.items():
-                if isinstance(value, (int, float)):
-                    metric_name = f'tractor_battery_{key}'
-                    lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')
-        
-        # 处理车辆状态数据（支持vehicle和vehicle_state两种字段名）
-        vehicle_data = data_packet.get('vehicle_state') or data_packet.get('vehicle')
-        if vehicle_data:
-            for key, value in vehicle_data.items():
-                if isinstance(value, (int, float)):
-                    metric_name = f'tractor_vehicle_{key}'
-                    lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')       
-        # 处理变速箱数据
-        if 'transmission' in data_packet:
-            transmission = data_packet['transmission']
-            for key, value in transmission.items():
-                if isinstance(value, (int, float)):
-                    metric_name = f'tractor_transmission_{key}'
-                    lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')
-        
-        # 处理液压系统数据
-        if 'hydraulic' in data_packet:
-            hydraulic = data_packet['hydraulic']
-            for key, value in hydraulic.items():
-                if isinstance(value, (int, float)):
-                    metric_name = f'tractor_hydraulic_{key}'
-                    lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')
-        
-        # 处理GNSS数据
-        if 'gnss' in data_packet:
-            gnss = data_packet['gnss']
-            for key, value in gnss.items():
-                if isinstance(value, (int, float)):
-                    metric_name = f'tractor_gnss_{key}'
-                    lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')
-        
-        # 处理传感器健康度
-        if 'sensor_health' in data_packet:
-            sensor_health = self.flatten_dict(data_packet['sensor_health'])
-            for key, value in sensor_health.items():
-                if isinstance(value, (int, float)):
-                    metric_name = f'tractor_sensor_{key}'
-                    lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')
-        
-        # 处理智驾系统数据
-        if 'intelligent_driving' in data_packet:
-            intelligent_driving = self.flatten_dict(data_packet['intelligent_driving'])
-            for key, value in intelligent_driving.items():
-                if isinstance(value, (int, float)):
-                    metric_name = f'tractor_intelligent_driving_{key}'
-                    lines.append(f'{metric_name}{{{base_labels}}} {value} {timestamp_ms}')
-        
-        return lines
-    
-    def write_to_victoriametrics(self, prometheus_lines: List[str]) -> bool:
-        """
-        将Prometheus格式数据写入VictoriaMetrics
-        
-        Args:
-            prometheus_lines: Prometheus格式的指标行
-            
-        Returns:
-            是否写入成功
-        """
-        if not prometheus_lines:
-            return True
-        
-        data = '\n'.join(prometheus_lines)
-        
-        try:
-            # 禁用代理，直接连接到localhost
-            response = requests.post(
-                self.write_endpoint,
-                data=data,
-                headers={'Content-Type': 'text/plain'},
-                timeout=10,
-                proxies={'http': None, 'https': None}  # 禁用代理
-            )
-            
-            if response.status_code == 204:
-                return True
-            else:
-                print(f"写入VictoriaMetrics失败: {response.status_code}, {response.text}")
-                return False
-        except Exception as e:
-            print(f"写入VictoriaMetrics异常: {e}")
-            return False
-    
-    def process_tbox_data(self, data_packet: Dict[str, Any]) -> bool:
-        """
-        处理T-BOX数据包
-        
-        Args:
-            data_packet: T-BOX数据包
-            
-        Returns:
-            是否处理成功
-        """
-        # 转换为Prometheus格式
-        prometheus_lines = self.convert_to_prometheus_format(data_packet)
-        
-        # 写入VictoriaMetrics
-        success = self.write_to_victoriametrics(prometheus_lines)
-        
-        if success:
-            print(f"✓ 成功写入 {len(prometheus_lines)} 个指标到VictoriaMetrics")
-        
-        return success
-
-
-def run_mqtt_bridge():
-    """运行MQTT桥接服务"""
+try:
     import paho.mqtt.client as mqtt
-    
-    # 创建桥接器实例
-    bridge = MQTTToVictoriaMetricsBridge(vm_url="http://localhost:8480")
-    
-    # MQTT配置
-    mqtt_broker = "localhost"
-    mqtt_port = 1883
-    mqtt_topic = "tractor/+/data"
-    
-    # MQTT回调函数
-    def on_connect(client, userdata, flags, rc):
-        if rc == 0:
-            print("[成功] 连接到MQTT Broker")
-            client.subscribe(mqtt_topic)
-            print(f"[成功] 订阅主题: {mqtt_topic}")
-            print("\n等待T-BOX数据...\n")
+    MQTT_AVAILABLE = True
+except ImportError:
+    print("错误: paho-mqtt库未安装")
+    print("安装命令: pip install paho-mqtt")
+    exit(1)
+
+# 配置
+MQTT_BROKER = "localhost"
+MQTT_PORT = 1883
+MQTT_TOPIC = "tractor/telemetry"
+VICTORIAMETRICS_URL = "http://localhost:8480/insert/0/prometheus/api/v1/import/prometheus"
+
+# 统计信息
+stats = {
+    "messages_received": 0,
+    "metrics_sent": 0,
+    "errors": 0,
+    "last_message_time": None
+}
+
+
+def flatten_dict(d: Dict[str, Any], parent_key: str = '', sep: str = '_') -> Dict[str, Any]:
+    """
+    将嵌套字典扁平化
+    例如: {'engine': {'rpm': 1800}} -> {'engine_rpm': 1800}
+    """
+    items = []
+    for k, v in d.items():
+        new_key = f"{parent_key}{sep}{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
         else:
-            print(f"[错误] 连接失败, 错误代码: {rc}")
+            items.append((new_key, v))
+    return dict(items)
+
+
+def convert_to_prometheus_format(data: Dict[str, Any]) -> str:
+    """
+    将T-BOX JSON数据转换为Prometheus格式
     
-    def on_message(client, userdata, msg):
+    输入格式:
+    {
+        "vehicle_id": "TRACTOR_001",
+        "timestamp": "2025-10-30T10:48:39.123456",
+        "engine_rpm": 1800,
+        "engine_coolant_temp": 110.5,
+        ...
+    }
+    
+    输出格式:
+    engine_rpm{vehicle_id="TRACTOR_001"} 1800 1698654519123
+    engine_coolant_temp{vehicle_id="TRACTOR_001"} 110.5 1698654519123
+    ...
+    """
+    lines = []
+    
+    # 提取vehicle_id和timestamp
+    vehicle_id = data.get('vehicle_id', 'UNKNOWN')
+    timestamp_str = data.get('timestamp', datetime.now().isoformat())
+    
+    # 转换timestamp为毫秒时间戳
+    try:
+        dt = datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+        timestamp_ms = int(dt.timestamp() * 1000)
+    except:
+        timestamp_ms = int(time.time() * 1000)
+    
+    # 扁平化嵌套结构（如果有）
+    flat_data = flatten_dict(data)
+    
+    # 转换每个指标
+    for key, value in flat_data.items():
+        # 跳过非数值字段
+        if key in ['vehicle_id', 'timestamp', 'operation_hours']:
+            continue
+        
+        # 跳过字符串类型的值
+        if isinstance(value, str):
+            continue
+        
+        # 跳过None值
+        if value is None:
+            continue
+        
+        # 转换为数值
         try:
-            # 解析JSON数据
-            data_packet = json.loads(msg.payload.decode('utf-8'))
-            vehicle_id = data_packet.get('vehicle_id', 'unknown')
-            
-            print(f"[接收] 车辆 {vehicle_id} 的数据 ({len(msg.payload)} 字节)")
-            
-            # 转换为Prometheus格式
-            prometheus_lines = bridge.convert_to_prometheus_format(data_packet)
-            print(f"[转换] 生成 {len(prometheus_lines)} 个指标")
-            
-            # 写入VictoriaMetrics
-            success = bridge.write_to_victoriametrics(prometheus_lines)
-            if success:
-                print(f"[成功] 写入 {len(prometheus_lines)} 个指标到VictoriaMetrics\n")
-            else:
-                print(f"[失败] 无法写入VictoriaMetrics\n")
-        except Exception as e:
-            print(f"[错误] 处理消息失败: {e}\n")
+            numeric_value = float(value)
+        except (ValueError, TypeError):
+            continue
+        
+        # 生成Prometheus格式的行
+        # 格式: metric_name{label1="value1"} value timestamp
+        line = f'{key}{{vehicle_id="{vehicle_id}"}} {numeric_value} {timestamp_ms}'
+        lines.append(line)
     
-    def on_disconnect(client, userdata, rc):
-        if rc != 0:
-            print(f"[警告] 与MQTT Broker断开连接, 尝试重连...")
+    return '\n'.join(lines)
+
+
+def send_to_victoriametrics(prometheus_data: str) -> bool:
+    """发送数据到VictoriaMetrics"""
+    try:
+        response = requests.post(
+            VICTORIAMETRICS_URL,
+            data=prometheus_data,
+            headers={'Content-Type': 'text/plain'},
+            timeout=5
+        )
+        
+        if response.status_code == 204:
+            return True
+        else:
+            print(f"[错误] VictoriaMetrics返回状态码: {response.status_code}")
+            print(f"[错误] 响应内容: {response.text}")
+            return False
+            
+    except Exception as e:
+        print(f"[错误] 发送到VictoriaMetrics失败: {e}")
+        return False
+
+
+def on_connect(client, userdata, flags, rc):
+    """MQTT连接回调"""
+    if rc == 0:
+        print(f"[成功] 连接到MQTT Broker")
+        client.subscribe(MQTT_TOPIC)
+        print(f"[成功] 订阅主题: {MQTT_TOPIC}")
+    else:
+        print(f"[错误] 连接失败，返回码: {rc}")
+
+
+def on_message(client, userdata, msg):
+    """MQTT消息回调"""
+    global stats
+    
+    try:
+        # 解析JSON数据
+        data = json.loads(msg.payload.decode('utf-8'))
+        vehicle_id = data.get('vehicle_id', 'UNKNOWN')
+        
+        stats["messages_received"] += 1
+        stats["last_message_time"] = datetime.now()
+        
+        # 转换为Prometheus格式
+        prometheus_data = convert_to_prometheus_format(data)
+        
+        # 计算指标数量
+        metric_count = len(prometheus_data.split('\n'))
+        
+        # 发送到VictoriaMetrics
+        if send_to_victoriametrics(prometheus_data):
+            stats["metrics_sent"] += metric_count
+            print(f"[接收] 车辆 {vehicle_id} 的数据 ({len(msg.payload)} 字节)")
+            print(f"[转换] 生成 {metric_count} 个指标")
+            print(f"[成功] 写入 {metric_count} 个指标到VictoriaMetrics")
+            print(f"[统计] 总消息: {stats['messages_received']}, 总指标: {stats['metrics_sent']}, 错误: {stats['errors']}")
+            print()
+        else:
+            stats["errors"] += 1
+            print(f"[错误] 发送失败")
+            print()
+            
+    except json.JSONDecodeError as e:
+        stats["errors"] += 1
+        print(f"[错误] JSON解析失败: {e}")
+        print(f"[数据] {msg.payload[:200]}")
+        print()
+    except Exception as e:
+        stats["errors"] += 1
+        print(f"[错误] 处理消息失败: {e}")
+        print()
+
+
+def on_disconnect(client, userdata, rc):
+    """MQTT断开连接回调"""
+    if rc != 0:
+        print(f"[警告] 意外断开连接，返回码: {rc}")
+        print("[信息] 尝试重新连接...")
+
+
+def main():
+    print("=" * 80)
+    print("  MQTT到VictoriaMetrics数据桥接服务 - 完整版")
+    print("=" * 80)
+    print()
+    print(f"MQTT Broker: {MQTT_BROKER}:{MQTT_PORT}")
+    print(f"MQTT Topic: {MQTT_TOPIC}")
+    print(f"VictoriaMetrics: {VICTORIAMETRICS_URL}")
+    print()
+    print("=" * 80)
+    print()
     
     # 创建MQTT客户端
     client = mqtt.Client()
@@ -254,100 +209,37 @@ def run_mqtt_bridge():
     client.on_message = on_message
     client.on_disconnect = on_disconnect
     
-    print("=" * 80)
-    print("MQTT到VictoriaMetrics数据桥接服务")
-    print("=" * 80)
-    print(f"MQTT Broker: {mqtt_broker}:{mqtt_port}")
-    print(f"MQTT Topic: {mqtt_topic}")
-    print(f"VictoriaMetrics: {bridge.write_endpoint}")
-    print("=" * 80)
+    # 连接到MQTT Broker
+    print("[连接] 正在连接到MQTT Broker...")
+    try:
+        client.connect(MQTT_BROKER, MQTT_PORT, 60)
+    except Exception as e:
+        print(f"[错误] 无法连接到MQTT Broker: {e}")
+        print("[提示] 请确保Mosquitto容器正在运行")
+        return
+    
+    # 开始循环
+    print()
+    print("等待T-BOX数据...")
     print()
     
     try:
-        print("[连接] 正在连接到MQTT Broker...")
-        client.connect(mqtt_broker, mqtt_port, 60)
         client.loop_forever()
     except KeyboardInterrupt:
-        print("\n\n[停止] 用户中断服务")
+        print()
+        print()
+        print("=" * 80)
+        print("  停止服务")
+        print("=" * 80)
+        print()
+        print(f"总消息数: {stats['messages_received']}")
+        print(f"总指标数: {stats['metrics_sent']}")
+        print(f"错误数: {stats['errors']}")
+        if stats['last_message_time']:
+            print(f"最后消息时间: {stats['last_message_time'].strftime('%Y-%m-%d %H:%M:%S')}")
+        print()
         client.disconnect()
-    except Exception as e:
-        print(f"\n[错误] 服务异常: {e}")
-        print("\n请检查:")
-        print("1. MQTT Broker是否运行: docker ps | findstr mosquitto")
-        print("2. VictoriaMetrics是否运行: docker ps | findstr vm")
-        print("3. 端口是否被占用: netstat -ano | findstr :1883")
 
 
-def demo_bridge():
-    """演示桥接器功能（仅用于测试）"""
-    # 创建桥接器实例
-    bridge = MQTTToVictoriaMetricsBridge(vm_url="http://localhost:8480")
-    
-    # 模拟T-BOX数据包
-    sample_data = {
-        'vehicle_id': 'TRACTOR_001',
-        'timestamp': datetime.now().isoformat(),
-        'operation_hours': 123.5,
-        'engine': {
-            'rpm': 1850,
-            'torque': 360,
-            'coolant_temp': 88.5,
-            'oil_pressure': 4.8,
-            'fuel_consumption_rate': 14.2,
-        },
-        'battery': {
-            'soc': 75.5,
-            'soh': 98.2,
-            'voltage': 625,
-            'current': 45,
-            'power': 28.125,
-            'temp_max': 42,
-            'temp_min': 38,
-        },
-        'vehicle_state': {
-            'speed': 9.5,
-            'acceleration': 0.05,
-            'steering_angle': 12,
-        },
-        'gnss': {
-            'latitude': 39.9042,
-            'longitude': 116.4074,
-            'altitude': 50,
-            'positioning_accuracy': 0.015,
-            'satellite_count': 16,
-        },
-    }
-    
-    print("=" * 80)
-    print("MQTT到VictoriaMetrics数据桥接器 - 演示")
-    print("=" * 80)
-    print(f"\n处理车辆 {sample_data['vehicle_id']} 的数据包...")
-    
-    # 转换数据
-    prometheus_lines = bridge.convert_to_prometheus_format(sample_data)
-    
-    print(f"\n转换后的Prometheus格式指标（前10条）:")
-    print("-" * 80)
-    for line in prometheus_lines[:10]:
-        print(line)
-    print(f"... 共 {len(prometheus_lines)} 条指标")
-    
-    print("\n" + "=" * 80)
-    print("注意: 实际写入VictoriaMetrics需要先启动VictoriaMetrics服务")
-    print("使用 docker-compose up -d 启动服务后，可以调用 write_to_victoriametrics() 方法")
-    print("=" * 80)
-
-
-if __name__ == '__main__':
-    # 运行真正的MQTT桥接服务
-    try:
-        import paho.mqtt.client as mqtt
-        run_mqtt_bridge()
-    except ImportError:
-        print("[错误] 缺少paho-mqtt库")
-        print("\n请安装: pip install paho-mqtt")
-        print("\n如果只是想测试转换功能，可以运行演示模式:")
-        print(">>> from mqtt_to_victoriametrics_bridge import demo_bridge")
-        print(">>> demo_bridge()")
-        import sys
-        sys.exit(1)
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,22 @@
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'vehicle_id']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'wechat'
+
+receivers:
+  - name: 'wechat'
+    webhook_configs:
+      - url: 'http://host.docker.internal:5001/webhook/wechat'
+        send_resolved: true
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'vehicle_id']

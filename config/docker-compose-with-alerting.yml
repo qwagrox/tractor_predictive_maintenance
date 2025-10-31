@@ -1,0 +1,202 @@
+version: '3.8'
+
+services:
+  # VictoriaMetrics集群 - 存储节点1
+  vmstorage-1:
+    image: victoriametrics/vmstorage:latest
+    container_name: vmstorage-1
+    ports:
+      - "8482:8482"
+      - "8400:8400"
+      - "8401:8401"
+    volumes:
+      - vmstorage-1-data:/storage
+    command:
+      - "--storageDataPath=/storage"
+      - "--httpListenAddr=:8482"
+      - "--vminsertAddr=:8400"
+      - "--vmselectAddr=:8401"
+      - "--retentionPeriod=12"
+    restart: unless-stopped
+    networks:
+      - vm-network
+
+  # VictoriaMetrics集群 - 存储节点2
+  vmstorage-2:
+    image: victoriametrics/vmstorage:latest
+    container_name: vmstorage-2
+    ports:
+      - "8483:8483"
+      - "8402:8402"
+      - "8403:8403"
+    volumes:
+      - vmstorage-2-data:/storage
+    command:
+      - "--storageDataPath=/storage"
+      - "--httpListenAddr=:8483"
+      - "--vminsertAddr=:8402"
+      - "--vmselectAddr=:8403"
+      - "--retentionPeriod=12"
+    restart: unless-stopped
+    networks:
+      - vm-network
+
+  # VictoriaMetrics集群 - 插入节点
+  vminsert:
+    image: victoriametrics/vminsert:latest
+    container_name: vminsert
+    ports:
+      - "8480:8480"
+    command:
+      - "--httpListenAddr=:8480"
+      - "--storageNode=vmstorage-1:8400"
+      - "--storageNode=vmstorage-2:8402"
+      - "--replicationFactor=2"
+    depends_on:
+      - vmstorage-1
+      - vmstorage-2
+    restart: unless-stopped
+    networks:
+      - vm-network
+
+  # VictoriaMetrics集群 - 查询节点
+  vmselect:
+    image: victoriametrics/vmselect:latest
+    container_name: vmselect
+    ports:
+      - "8481:8481"
+    command:
+      - "--httpListenAddr=:8481"
+      - "--storageNode=vmstorage-1:8401"
+      - "--storageNode=vmstorage-2:8403"
+      - "--dedup.minScrapeInterval=10s"
+    depends_on:
+      - vmstorage-1
+      - vmstorage-2
+    restart: unless-stopped
+    networks:
+      - vm-network
+
+  # vmagent - 数据采集代理
+  vmagent:
+    image: victoriametrics/vmagent:latest
+    container_name: vmagent
+    ports:
+      - "8429:8429"
+      - "8089:8089"
+    volumes:
+      - ./vmagent.yml:/etc/vmagent/vmagent.yml
+      - vmagent-data:/vmagent-remotewrite-data
+    command:
+      - "--httpListenAddr=:8429"
+      - "--remoteWrite.url=http://vminsert:8480/insert/0/prometheus/api/v1/write"
+      - "--remoteWrite.maxDiskUsagePerURL=10GB"
+      - "--influxListenAddr=:8089"
+    depends_on:
+      - vminsert
+    restart: unless-stopped
+    networks:
+      - vm-network
+
+  # Mosquitto MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-logs:/mosquitto/log
+    restart: unless-stopped
+    networks:
+      - vm-network
+
+  # Telegraf - MQTT到VictoriaMetrics桥接
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
+    volumes:
+      - ./telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      - mosquitto
+      - vmagent
+    restart: unless-stopped
+    networks:
+      - vm-network
+
+  # vmalert - 告警评估引擎
+  vmalert:
+    image: victoriametrics/vmalert:latest
+    container_name: vmalert
+    ports:
+      - "8880:8880"
+    volumes:
+      - ../alerting/rules:/etc/vmalert/rules
+    command:
+      - "--datasource.url=http://vmselect:8481/select/0/prometheus"
+      - "--remoteRead.url=http://vmselect:8481/select/0/prometheus"
+      - "--remoteWrite.url=http://vminsert:8480/insert/0/prometheus/api/v1/write"
+      - "--notifier.url=http://alertmanager:9093"
+      - "--rule=/etc/vmalert/rules/*.yml"
+      - "--httpListenAddr=:8880"
+      - "--evaluationInterval=30s"
+      - "--external.label=cluster=tractor_pdm"
+    depends_on:
+      - vmselect
+      - vminsert
+      - alertmanager
+    restart: unless-stopped
+    networks:
+      - vm-network
+
+  # Alertmanager - 告警管理和路由
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ../alerting/config/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - alertmanager-data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+      - "--web.external-url=http://localhost:9093"
+    restart: unless-stopped
+    networks:
+      - vm-network
+
+  # Grafana - 可视化平台
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../grafana/provisioning:/etc/grafana/provisioning
+      - ../grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - vmselect
+    restart: unless-stopped
+    networks:
+      - vm-network
+
+volumes:
+  vmstorage-1-data:
+  vmstorage-2-data:
+  vmagent-data:
+  mosquitto-data:
+  mosquitto-logs:
+  alertmanager-data:
+  grafana-data:
+
+networks:
+  vm-network:
+    driver: bridge
