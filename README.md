@@ -44,14 +44,23 @@ docker ps --format "table {{.Names}}\t{{.Status}}"
 ```
 
 应该看到9个容器都在运行：
+
 ✅ mosquitto
+
 ✅ vmstorage-1
+
 ✅ vmstorage-2
+
 ✅ vminsert
+
 ✅ vmselect
+
 ✅ vmagent
+
 ✅ vmalert
+
 ✅ alertmanager
+
 ✅ grafana
 
 
